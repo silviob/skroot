@@ -1,4 +1,34 @@
+#!/bin/sh
 
-#!/bin/bash
+OPTS=`getopt -o o: --long output: \
+     -n $0 -- "$@"`
 
-LD_LIBRARY_PATH=. LD_PRELOAD=libaudit.so $@
+eval set -- "$OPTS"
+echo $OPTS
+
+OUTPUT=skr.oot
+
+while true ; do
+	case "$1" in
+        -o|--output) OUTPUT=$2 ; shift 2 ;;
+        --) shift ; break ;;
+        *) echo "Internal error!" ; exit 1 ;;
+	esac
+done
+
+LOCATION="`dirname \"$0\"`"               # relative
+LOCATION="`( cd \"$LOCATION\" && pwd )`"  # absolutized and normalized
+if [ -z "$LOCATION" ] ; then
+  # error; for some reason, the path is not accessible
+  # to the script (e.g. permissions re-evaled after suid)
+  exit 1  # fail
+fi
+echo "$LOCATION"
+
+LOGFILE=`pwd`/$OUTPUT
+echo "log at: $LOGFILE"
+echo "scrutinizing: '$@'"
+export LD_PRELOAD=libdl.so:$LOCATION/libskroot.so:$LD_PRELOAD
+export SKROOT_FILE=$LOGFILE
+
+$@
