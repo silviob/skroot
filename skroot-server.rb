@@ -3,6 +3,7 @@ require 'webrick'
 require 'thread'
 require 'logger'
 require 'tsort'
+require 'pathname'
 
 def main()
   $log = Logger.new STDERR
@@ -11,8 +12,9 @@ def main()
     "#{timestring} #{sev}  #{msg}\n"
   end
   $log.level = Logger::DEBUG
-  $log.info "Skroot Server for #{ARGV[0]}"
-  model = Model.new(ARGV[0])
+  filename = Pathname.new(ARGV[0]).realpath
+  $log.info "Skroot Server for #{filename}"
+  model = Model.new(filename)
   count = 0
 #  model.load
 #  exit
@@ -66,8 +68,10 @@ class Model
 
   class ProcEntry
 
-    attr_accessor :pid, :parent,:start_time, :end_time, :work_dir, :id, :duration, :piped, :fds
-    attr_reader  :read_files, :write_files, :argv, :env, :children, :env_queries
+    attr_accessor :pid, :parent,:start_time, :end_time, :work_dir, :id,
+                  :duration, :piped, :fds, :read_bytes, :write_bytes, :exit_code
+    attr_reader  :read_files, :write_files, :argv, :env, :children,
+                 :env_queries
 
     def initialize()
       @write_files = []
@@ -79,6 +83,25 @@ class Model
       @duration = 0
       @piped = false
       @fds = {}
+      @read_bytes = 0
+      @write_bytes = 0
+      @exit_code = nil
+    end
+
+    def cmdline()
+      return @argv.join ' '
+    end
+
+    def environment()
+      environment = {}
+      @env.each do |e|
+        parts = e.split '='
+        puts parts.inspect
+        key = parts[0]
+        value = parts[1..-1].join '='
+        environment[key] = value
+      end
+      return environment
     end
 
   end
@@ -289,10 +312,11 @@ class Model
     proc.work_dir = dir
   end
 
-  def fini(proc, time, not_used)
+  def fini(proc, time, exit_code)
     proc.end_time = Integer(time)
     begin
       proc.duration = proc.end_time - proc.start_time 
+      proc.exit_code = exit_code
     rescue => e
       $log.warn "bad duration #{proc.start_time}:#{proc.start_time}"
     end
@@ -303,15 +327,17 @@ class Model
     match = exp.match closeinfo
     if match
       fd = match[1]
-      read = match[2]
-      written = match[3]
+      read = [0, Integer(match[2])].max
+      written = [0, Integer(match[3])].max
       if proc.parent and proc.parent.piped
         proc = proc.parent
       end
       file = proc.fds[Integer(fd)]
       if file == nil then return end
-      file.read_bytes += Integer(read)
-      file.write_bytes += Integer(written)
+      file.read_bytes += read
+      file.write_bytes += written
+      proc.read_bytes += read
+      proc.write_bytes += written
     else
       $log.warn "closeinfo didn't match: #{closeinfo}"
     end
@@ -448,7 +474,7 @@ class View
   end
 
   def proc_link(proc)
-    cmdline = proc.argv.join ' '
+    cmdline = proc.cmdline
     shortcmd = cmdline
     max = 120
     if cmdline.size > max
@@ -497,8 +523,23 @@ class View
     a(url) { "#{file.read_procs.size}" }
   end
 
+  def safe(s)
+    problems = %w(" & < > ')
+    escape = { '"' => '&quot;',
+               "'" => '&#39;',
+               '&' => '&amp;',
+               '<' => '&lt;',
+               '>' => '&gt' }
+    escaped = s
+    escape.keys.each do |k|
+      escaped = escaped.gsub /#{k}/, escape[k]
+    end
+    return escaped
+  end
+
   def html()
-    "<html><head><title>#{@title}</title>" <<
+    "<!DOCTYPE html><html><head><title>#{@title}</title>" <<
+    '<meta http-equiv="Content-Type" content="text/html;charset=utf-8">' <<
     '<link href="//netdna.bootstrapcdn.com/' <<
     'bootstrap/3.0.2/css/bootstrap.min.css"' <<
     ' rel="stylesheet"></head>' <<
@@ -506,11 +547,11 @@ class View
   end
 
   def body()
-    '<body class="container">' << yield << '</body>'
+    '<body class="container">' << h2(a('/') { 'Skroot' }) << yield << '</body>'
   end
 
   def a(href, title='')
-    "<a href=\"#{href}\" title=\"#{title}\">" << yield << "</a>"
+    "<a href=\"#{href}\" title=\"#{safe title}\">" << yield << "</a>"
   end
 
   def h2(title)
@@ -617,7 +658,6 @@ class RootView < View
     mtime = model.mtime
     html do
       body do
-        h2('Skroot') <<
         h3(model.filename) <<
         dl([
           ['Log File', model.filename],
@@ -693,14 +733,19 @@ class ProcessListView < View
     super controller, title
     @proclistview = ObjectListView.new controller, title
     @proclistview.title = 'Processes'
-    @proclistview.column_headers = ['PID', 'Command', 'Duration', 'Children']
+    @proclistview.column_headers = ['PID', 'Command', 'Duration', 'Bytes Read',
+                                    'Bytes Written', 'Children']
     @proclistview.columns = [ lambda { |p,v| p.pid },
                               lambda { |p,v| v.proc_link(p) },
                               lambda { |p,v| p.duration },
+                              lambda { |p,v| p.read_bytes },
+                              lambda { |p,v| p.write_bytes },
                               lambda { |p,v| v.proc_children_link(p) } ]
     @proclistview.sorters = [ lambda { |p| p.pid },
-                              lambda { |p| p.argv.join ' ' },
+                              lambda { |p| p.cmdline },
                               lambda { |p| p.duration },
+                              lambda { |p| p.read_bytes },
+                              lambda { |p| p.write_bytes },
                               lambda { |p| p.children.size } ]
   end
 
@@ -790,24 +835,29 @@ class ProcessView < View
     else
       'no parent'
     end
+    env = proc.environment
     html do
       body do
         h2("Process #{proc.pid}") <<
         h3('Stats') <<
         dl([
           ['Parent', parent_link ],
+          ['Children', proc_children_link(proc) ],
           ['Duration', proc.duration],
+          ['Exit Code', proc.exit_code],
           ['Start Time', proc.start_time],
           ['End Time', proc.end_time],
           ['Working Directory', proc.work_dir],
-          ['Arguments', proc.argv.join(' ')]
+          ['Bytes Read', proc.read_bytes],
+          ['Bytes Written', proc.write_bytes],
+          ['Arguments', proc.cmdline ]
         ]) <<
         h3('Input Files') <<
         ol(proc.read_files.collect {|f| file_link f }) <<
         h3('Output Files') <<
         ol(proc.write_files.collect {|f| file_link f }) <<
         h3('Environment') <<
-        ul(proc.env)
+        dl(env.keys.sort.collect { |e| [e, env[e]] })
       end
     end
   end
