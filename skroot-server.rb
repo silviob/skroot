@@ -59,8 +59,16 @@ class Model
       return Model.dependencies(self).select { |e| e.respond_to? :write_procs }
     end
 
+    def file_dependents()
+      return Model.dependents(self).select { |e| e.respond_to? :write_procs }
+    end
+
     def proc_dependencies()
       return Model.dependencies(self).select { |e| e.respond_to? :read_files }
+    end
+
+    def proc_dependents()
+      return Model.dependents(self).select { |e| e.respond_to? :read_files }
     end
 
   end
@@ -188,6 +196,34 @@ class Model
   end
 
   def self.dependencies(object)
+    traverse_dependencies = lambda do |q, cur|
+      if cur.respond_to? :read_files
+        q.push *cur.read_files
+      end
+      if cur.respond_to? :write_procs
+        q.push *cur.write_procs
+      end
+    end
+    traversal = self.traverse object, traverse_dependencies
+    traversal.delete object
+    return traversal
+  end
+
+  def self.dependents(object)
+    traverse_dependents = lambda do |q, cur|
+      if cur.respond_to? :write_files
+        q.push *cur.write_files
+      end
+      if cur.respond_to? :read_procs
+        q.push *cur.read_procs
+      end
+    end
+    traversal = self.traverse object, traverse_dependents
+    traversal.delete object
+    return traversal
+  end
+
+  def self.traverse(object, traversal)
     deps = []
     q = [object]
     existing = {}
@@ -196,12 +232,7 @@ class Model
       if not existing.key? cur
         existing[cur] = :discovered
         q.push cur
-        if cur.respond_to? :read_files
-          q.push *cur.read_files
-        end
-        if cur.respond_to? :write_procs
-          q.push *cur.write_procs
-        end
+        traversal.call q, cur
       elsif existing[cur] == :discovered
         existing[cur] = :processed
         deps.push cur
@@ -362,7 +393,6 @@ class Controller
     @proclistview = ProcessListView.new self, title
 
     @procview = ProcessView.new self, title
-    @procscriptview = ProcessScriptView.new self, title
     @routes = []
     register_routes [
       [ '^/?$', 'root',
@@ -381,10 +411,12 @@ class Controller
           lambda { |id| @model.files[id].read_procs }, @proclistview ],
       [ '^/files/#{id}/file_dependencies/?$', 'file_dependencies',
           lambda { |id| @model.files[id].file_dependencies }, @filelistview ],
+      [ '^/files/#{id}/file_dependents/?$', 'file_dependents',
+          lambda { |id| @model.files[id].file_dependents }, @filelistview ],
       [ '^/files/#{id}/proc_dependencies/?$', 'proc_dependencies',
           lambda { |id| @model.files[id].proc_dependencies }, @proclistview ],
-      [ '^/files/#{id}/proc_dependencies_script/?$', 'proc_dependencies_script',
-          lambda { |id| @model.files[id].proc_dependencies }, @procscriptview ],
+      [ '^/files/#{id}/proc_dependents/?$', 'proc_dependents',
+          lambda { |id| @model.files[id].proc_dependents }, @proclistview ],
       [ '^/processes/?$', 'root_processes',
           lambda { || @model.procs.select { |p| p.parent == nil } }, @proclistview ],
       [ '^/processes/#{id}$', 'proc',
@@ -428,7 +460,7 @@ class Controller
       meta.send(:define_method, get_sym, get_handler)
       @routes.push [ Regexp.new(path.gsub('#{id}', '([0-9]+)')), get_sym ]
       meta.send(:define_method, (name + '_url').to_sym, lambda do |o| 
-        path.gsub('#{id}', o.id.to_s).gsub(/\$|\?|\^/, '')
+        path.gsub('#{id}', o.id.to_s).gsub(/\/\?\$|\$|\?|\^/, '')
       end)
     end
   end
@@ -508,8 +540,18 @@ class View
     a(url) { "#{url}" }
   end
 
+  def file_file_dependents_link(file)
+    url = @controller.file_dependents_url(file)
+    a(url) { "#{url}" }
+  end
+
   def file_proc_dependencies_link(file)
     url = @controller.proc_dependencies_url(file)
+    a(url) { "#{url}" }
+  end
+
+  def file_proc_dependents_link(file)
+    url = @controller.proc_dependents_url(file)
     a(url) { "#{url}" }
   end
 
@@ -693,7 +735,9 @@ class FileView < View
         dl([
           ['Parent', parent_link],
           ['File Dependencies', file_file_dependencies_link(file)],
+          ['File Dependents', file_file_dependents_link(file)],
           ['Process Dependencies', file_proc_dependencies_link(file)],
+          ['Process Dependents', file_proc_dependents_link(file)],
           ['Writers', file_writers_link(file)],
           ['Readers', file_readers_link(file)]
         ])
@@ -804,24 +848,6 @@ class ObjectListView < View
     end
     h2(title) <<
     table(headers, content)
-  end
-
-end
-
-class ProcessScriptView < View
-  
-  attr_accessor :columns, :column_headers
-
-  def render(processes, req)
-    t = ''
-    processes.each do |p|
-      t << "cd #{p.work_dir}\n"
-      p.env.each do |e|
-        t << "export '#{e}'\n"
-      end
-      t << p.argv.select { |a| a[0..4] != '-spec' } .join(' ') << "\n"
-    end
-    t
   end
 
 end
