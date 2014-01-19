@@ -1,8 +1,6 @@
-
 Skroot 
 ======
---Leaving process trees no place to hide.--
--------------------------------------------
+### Leaving process trees no place to hide. ###
 
 OVERVIEW
 --------
