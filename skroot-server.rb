@@ -16,8 +16,6 @@ def main()
   $log.info "Skroot Server for #{filename}"
   model = Model.new(filename)
   count = 0
-#  model.load
-#  exit
   controller = Controller.new model
   server = Server.new :Port => 8000
 
@@ -133,27 +131,6 @@ class Model
 
   def progress()
     return [ @read_bytes, File.stat(@filename).size ]
-  end
-
-  def load2()
-    load_in_c do |contents|
-      while contents.size > 0
-          pid = contents.shift
-          time = contents.shift
-          type = contents.shift
-          args = contents.shift
-          begin
-            if respond_to? type
-              send type, proc_for_pid(pid), time, args
-            else
-              $log.warn "log type '#{type}' not supported"
-            end
-          rescue => e
-            $log.warn "#{e}: #{pid} -- #{time} -- #{type} -- #{args}"
-            raise
-          end
-      end
-    end
   end
 
   def load()

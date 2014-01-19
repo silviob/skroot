@@ -23,11 +23,10 @@ if [ -z "$LOCATION" ] ; then
   # to the script (e.g. permissions re-evaled after suid)
   exit 1  # fail
 fi
-echo "$LOCATION"
 
 LOGFILE=`pwd`/$OUTPUT
-echo "log at: $LOGFILE"
-echo "scrutinizing: '$@'"
+echo "+ scrutinizing: '$@'"
+echo "+ log at: $LOGFILE"
 export LD_PRELOAD=libdl.so:$LOCATION/libskroot.so:$LD_PRELOAD
 export SKROOT_FILE=$LOGFILE
 
