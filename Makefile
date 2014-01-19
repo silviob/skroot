@@ -15,6 +15,7 @@ install: libskroot.so
 	cp skroot-server.rb $(DEST)
 	chmod 0755 skroot
 	cp -a skroot $(DEST)
+	unlink /usr/bin/skroot
 	ln -s $(DEST)/skroot /usr/bin/skroot
 
 clean:

@@ -4,6 +4,7 @@ require 'thread'
 require 'logger'
 require 'tsort'
 require 'pathname'
+require 'set'
 
 def main()
   $log = Logger.new STDERR
@@ -46,8 +47,8 @@ class Model
     attr_reader :read_procs, :write_procs, :children
 
     def initialize()
-      @read_procs = []
-      @write_procs = []
+      @read_procs = Set.new
+      @write_procs = Set.new
       @read_bytes = 0
       @write_bytes = 0
       @children = []
@@ -80,8 +81,8 @@ class Model
                  :env_queries
 
     def initialize()
-      @write_files = []
-      @read_files = []
+      @write_files = Set.new
+      @read_files = Set.new
       @argv = []
       @env = []
       @children = []
@@ -285,14 +286,6 @@ class Model
       proc = proc.parent
     end
     proc.fds[Integer(fd)] = file
-    if (mode.split(//) & ['+', 'w', 'a']).length > 0
-      proc.write_files << file
-      file.write_procs << proc
-    end
-    if (mode.split(//) & ['+', 'r']).length > 0
-      proc.read_files << file
-      file.read_procs << proc
-    end
   end
 
   def miss(proc, time, arg)
@@ -346,6 +339,14 @@ class Model
       file.write_bytes += written
       proc.read_bytes += read
       proc.write_bytes += written
+      if written > 0
+        proc.write_files << file
+        file.write_procs << proc
+      end
+      if read > 0
+        proc.read_files << file
+        file.read_procs << proc
+      end
     else
       $log.warn "closeinfo didn't match: #{closeinfo}"
     end
