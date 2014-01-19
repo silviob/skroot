@@ -1,6 +1,6 @@
 #!/bin/sh
 
-OPTS=`getopt -o o:s --long output:server \
+OPTS=`getopt -o o:s --long output:,server \
      -n $0 -- "$@"`
 
 eval set -- "$OPTS"
