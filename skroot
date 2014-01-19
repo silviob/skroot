@@ -1,15 +1,17 @@
 #!/bin/sh
 
-OPTS=`getopt -o o: --long output: \
+OPTS=`getopt -o o:s --long output:server \
      -n $0 -- "$@"`
 
 eval set -- "$OPTS"
 
-OUTPUT=skr.oot
+OUTPUT=`pwd`/skr.oot
+SERVER=0
 
 while true ; do
 	case "$1" in
         -o|--output) OUTPUT=$2 ; shift 2 ;;
+        -s|--server) SERVER=1 ; shift 1 ;;
         --) shift ; break ;;
         *) echo "Internal error!" ; exit 1 ;;
 	esac
@@ -24,10 +26,13 @@ if [ -z "$LOCATION" ] ; then
   exit 1  # fail
 fi
 
-LOGFILE=`pwd`/$OUTPUT
-echo "+ scrutinizing: '$@'"
-echo "+ log at: $LOGFILE"
-export LD_PRELOAD=libdl.so:$LOCATION/libskroot.so:$LD_PRELOAD
-export SKROOT_FILE=$LOGFILE
-
-$@
+if [ "x$SERVER" = "x1" ] ; then
+  ruby $LOCATION/skroot-server.rb $@
+else
+  LOGFILE=$OUTPUT
+  echo "+ scrutinizing: '$@'"
+  echo "+ log at: $LOGFILE"
+  export LD_PRELOAD=libdl.so:$LOCATION/libskroot.so:$LD_PRELOAD
+  export SKROOT_FILE=$LOGFILE
+  $@ # executes the command with LD_PRELOAD taking effect.
+fi
