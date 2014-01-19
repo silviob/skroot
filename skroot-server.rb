@@ -399,17 +399,8 @@ class Controller
       [ '^/processes/#{id}$', 'proc',
           lambda { |id| @model.procs[id] }, @procview ],
       [ '^/processes/#{id}/children/?$', 'proc_children',
-          lambda do |id| 
-            children = @model.procs[id].children.sort_by do |p| 
-              if p.duration
-                p.duration
-              else
-                0
-              end
-            end
-            children.reverse
-          end, @proclistview ],
-    ]  
+          lambda { |id| @model.procs[id].children }, @proclistview ],
+    ]
   end
 
   def register_routes(routes)
