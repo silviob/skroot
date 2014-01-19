@@ -4,7 +4,6 @@ OPTS=`getopt -o o: --long output: \
      -n $0 -- "$@"`
 
 eval set -- "$OPTS"
-echo $OPTS
 
 OUTPUT=skr.oot
 
@@ -16,7 +15,8 @@ while true ; do
 	esac
 done
 
-LOCATION="`dirname \"$0\"`"               # relative
+THIS="`realpath \"$0\"`"
+LOCATION="`dirname \"$THIS\"`"            # relative
 LOCATION="`( cd \"$LOCATION\" && pwd )`"  # absolutized and normalized
 if [ -z "$LOCATION" ] ; then
   # error; for some reason, the path is not accessible
